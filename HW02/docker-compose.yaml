@@ -1,0 +1,35 @@
+version: "3.9"
+
+services:
+  db:
+    image: postgres:18
+    container_name: pg-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: appdb
+      TZ: Europe/Amsterdam
+      PGDATA: /var/lib/docker-postgresql/data # Добавлено для того чтобы после перезапуска контейнера с бд не пропадали данные
+    ports:
+      - "5432:5432"                 # при необходимости доступ с хоста
+    volumes:
+      - pgdata:/var/lib/docker-postgresql/data
+    networks:
+      - pgnet
+
+  psql-client:
+    image: postgres:18-alpine       # содержит psql и прочие клиенты
+    container_name: pg-psql
+    depends_on:
+      - db
+    entrypoint: ["tail", "-f", "/dev/null"]  # чтобы контейнер «жил» и в него можно было заходить
+    networks:
+      - pgnet
+
+volumes:
+  pgdata:
+
+networks:
+  pgnet:
+    driver: bridge
