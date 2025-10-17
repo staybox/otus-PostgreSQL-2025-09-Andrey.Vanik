@@ -32,9 +32,15 @@
 Результатом выполнения данного задания стало:
 1. Поднятие docker контейнеров через docker compose командой ```docker compose -f docker-compose.yaml up -d```
 
+![Старт контейнеров](screens/start-containers.png)
+
 ![Листинг контейнеров](screens/docker_containers.png)
+
+![Команды](screens/select.png)
 
 2. Пришло понимание, что для кастомной директории необходимо в docker-compose.yaml в переменных надо определять эту переменную ```PGDATA: /var/lib/docker-postgresql/data```. Без нее данные при перезапуске контейнера с БД будут пропадать. Т.Е. если даже в docker-compose.yaml будет определена директива volumes ```pgdata:/var/lib/docker-postgresql/data``` то этого мало.
 Файл docker-compose.yaml приложен к домашнему заданию.
 
 3. Так как файервол был выключен, мне удалось без проблем подключиться к PostgreSQL серверу извне по порту 5432.
+
+![Подключение извне](screens/connect_from_remote_vps.png)
