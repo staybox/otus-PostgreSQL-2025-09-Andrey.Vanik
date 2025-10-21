@@ -36,50 +36,50 @@
 - Зашел под пользователем postgres и создал таблицу
 
 ```Вход```
-![Вход](/screens/connect.png)
+![Вход](screens/connect.png)
 
 ```Создание БД и таблицы```
-![Создание БД и таблицы](/screens/createdb.png)
+![Создание БД и таблицы](screens/createdb.png)
 
 ```Вставка данных```   
-![Вставка данных](/screens/insertdata.png)
+![Вставка данных](screens/insertdata.png)
 
 - Остановил инстанс PostgreSQL 18 командой ```systemctl stop postgresql-18```
 
 - Создал новый диск на 10 ГБ и его проинициализоровал, создал на нем файловую систему и подмонтировал. Добавил его в ```/etc/fstab``` чтобы монтирование сохранилось после перезагрузки
 
 ```Смотрим диски, второй диск отображается как /dev/sdb и папка монтирование как /mnt/newdisk```  
-![lsblk](/screens/lsblk.png)
+![lsblk](screens/lsblk.png)
 
 ```Чтобы монтирование сохранилось после перезагрузки```
-![fstab](/screens/fstab.png)
+![fstab](screens/fstab.png)
 
 - Выполнил команду ```chown -R postgres:postgres``` на каталоге ```/mnt/newdisk/data```
-![chown](/screens/chown.png)
+![chown](screens/chown.png)
 
 - Перенес данные с ```/var/lib/pgsql/18/data``` в ```/mnt/newdisk/data/18/data```
-![Перенос](/screens/newlocation.png)
+![Перенос](screens/newlocation.png)
 
 - Заменил в конфигурационном файле ```/usr/lib/systemd/system/postgresql-18.service``` переменную PGDATA
-![Замена переменной](/screens/newpath.png)
+![Замена переменной](screens/newpath.png)
 
 - Запустил инстанс кластера командой ```systemctl start postgresql-18``` и увидел те данные, которые я недавно вставлял в таблицу БД
 
-![Проверка статуса](/screens/checkdata.png)
+![Проверка статуса](screens/checkdata.png)
 
 #### Задание со звездочкой
 
 - Установил на сервере на котором находится БД и клиенте (откуда буду монтировать) нужное мне ПО командой ```dnf install nfs-utils```
-![Установка пакетов nfs](/screens/nfs.png)
+![Установка пакетов nfs](screens/nfs.png)
 
 - На сервере к которому будет подключаться клиент, отключил файервол командой ```systemctl stop firewalld``` и привел файл ```/etc/exports``` к следующему виду. Здесь указан IP адрес клиента, который будет подключаться к серверу с БД
-![exports](/screens/exports.png)
+![exports](screens/exports.png)
 
 - Запустил службу NFS на сервере с БД
-![nfs-server status](/screens/nfs-server.png)
+![nfs-server status](screens/nfs-server.png)
 
 - Подключился по NFS к серверу с нашей БД
-![Подключение по NFS](/screens/connect-nfs.png)
+![Подключение по NFS](screens/connect-nfs.png)
 
 - Запустил на нашем сервере-клиенте БД командой ```systemctl start postgresql-18```
-![Запуск PostgreSQL 18](/screens/start-postgres.png)
+![Запуск PostgreSQL 18](screens/start-postgres.png)
