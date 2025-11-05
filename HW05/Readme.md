@@ -24,13 +24,13 @@ https://github.com/akopytov/sysbench)
 ```Создание таблиц в БД```
 ![Создание таблиц в БД](screens/createtables.png)
 
-```Просмотр созданных таблиц```
+```Просмотр созданных таблиц```      
 ![Просмотр таблиц](screens/showtables.png)
 
 ```Тестирование без каких-либо настроек```
 ![Тестирование без настроек](screens/test1withouttuning.png)
 
-```Настройки под мою ВМ (первый тюнинг)```
+```Настройки под мою ВМ (первый тюнинг)```       
 ![Первый тюнинг](screens/first_tuning.png)
 
 ```Результаты после теста первого тюнинга```
@@ -51,7 +51,7 @@ https://github.com/akopytov/sysbench)
 ```Установка sysbench```
 ![Установка sysbench](screens/installsysbenchdnf.png)
 
-```Создаем БД под тест TPCC```
+```Создаем БД под тест TPCC```       
 ![Создание БД под тест TPCC](screens/createsbdb.png)
 
 ```TPCC подготовка```
