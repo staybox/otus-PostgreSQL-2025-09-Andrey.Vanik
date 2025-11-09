@@ -574,6 +574,44 @@ SELECT * FROM pgstattuple(
 
 ![Финальный результат](screens/final_result.png)
 
+- Задание со *:
+Написать анонимную процедуру, в которой в цикле 10 раз обновятся все строчки в искомой таблице.
+Не забыть вывести номер шага цикла.
+
+```
+DO $$
+DECLARE
+  i int;
+  v_updated bigint;
+BEGIN
+  FOR i IN 1..10 LOOP
+    UPDATE public.demo_bloat
+       SET txt = txt || 'X';
+    GET DIAGNOSTICS v_updated = ROW_COUNT;
+    RAISE NOTICE 'Шаг %, обновлено строк: %', i, v_updated;
+  END LOOP;
+END$$;
+```
+
+Если вдруг надо откатить транзакцию, то оборачиваем в ```BEGIN```:
+```
+BEGIN;                     -- вручную начинаем транзакцию
+DO $$
+DECLARE i int; v_updated bigint;
+BEGIN
+  FOR i IN 1..10 LOOP
+    UPDATE public.demo_bloat SET txt = txt || 'X';
+    GET DIAGNOSTICS v_updated = ROW_COUNT;
+    RAISE NOTICE 'Шаг %, обновлено строк: %', i, v_updated;
+  END LOOP;
+END$$;
+
+-- ...проверили что получилось...
+ROLLBACK;                  -- откатываем всё, что сделал DO
+-- или COMMIT;             -- если хотим сохранить
+```
+![Анонимный блок](screens/anonym.png)
+
 ### Итого:
 - После каждой волны UPDATE создаются новые версии строк (MVCC). Старые версии становятся dead tuples.
 
