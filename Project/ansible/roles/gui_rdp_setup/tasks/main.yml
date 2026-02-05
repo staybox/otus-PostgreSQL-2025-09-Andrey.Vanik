@@ -1,0 +1,72 @@
+---
+- name: Update apt cache
+  apt:
+    update_cache: yes
+    cache_valid_time: 3600
+
+- name: Install Ubuntu Desktop Minimal
+  apt:
+    name: ubuntu-desktop-minimal
+    state: present
+  # ВАЖНО: установка GUI занимает 10-15 минут, увеличим таймаут
+  register: gui_install
+  async: 1200
+  poll: 30
+
+- name: Install XRDP
+  apt:
+    name: xrdp
+    state: present
+
+- name: Add XRDP user to ssl-cert group
+  user:
+    name: xrdp
+    groups: ssl-cert
+    append: yes
+
+- name: Configure XRDP to use GNOME
+  copy:
+    dest: /etc/xrdp/startwm.sh
+    content: |
+      #!/bin/sh
+      if [ -r /etc/default/locale ]; then
+        . /etc/default/locale
+        export LANG
+      fi
+      export GNOME_SHELL_SESSION_MODE=ubuntu
+      export XDG_CURRENT_DESKTOP=ubuntu:GNOME
+      export XDG_SESSION_TYPE=x11
+      exec /etc/X11/Xsession
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Fix Polkit "Authentication Required" popups
+  copy:
+    dest: /etc/polkit-1/localauthority/50-local.d/45-allow-colord.pkla
+    content: |
+      [Allow Colord Create Device]
+      Identity=unix-user:*
+      Action=org.freedesktop.color-manager.create-device
+      ResultAny=no
+      ResultInactive=no
+      ResultActive=yes
+
+      [Allow Colord Create Profile]
+      Identity=unix-user:*
+      Action=org.freedesktop.color-manager.create-profile
+      ResultAny=no
+      ResultInactive=no
+      ResultActive=yes
+
+- name: Open Firewall for RDP (3389)
+  ufw:
+    rule: allow
+    port: '3389'
+    proto: tcp
+
+- name: Restart and Enable XRDP
+  systemd:
+    name: xrdp
+    state: restarted
+    enabled: yes

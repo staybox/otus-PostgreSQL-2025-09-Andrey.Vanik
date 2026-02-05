@@ -1,0 +1,33 @@
+---
+- name: Install HAProxy
+  dnf: { name: haproxy, state: present }
+
+- name: Configure HAProxy from template
+  template:
+    src: haproxy.cfg.j2
+    dest: /etc/haproxy/haproxy.cfg
+  notify: restart haproxy
+
+- name: Ensure firewalld and python bindings are installed (HAProxy nodes)
+  dnf:
+    name:
+      - firewalld
+      - python3-firewall
+    state: present
+
+- name: Ensure firewalld is started and enabled (HAProxy nodes)
+  systemd:
+    name: firewalld
+    state: started
+    enabled: yes
+
+- name: Open Firewall ports for HAProxy
+  firewalld:
+    port: "{{ item }}"
+    permanent: yes
+    state: enabled
+    immediate: yes
+  loop: ['5432/tcp', '5433/tcp', '8080/tcp']
+
+- name: Enable and start HAProxy
+  systemd: { name: haproxy, state: started, enabled: yes }

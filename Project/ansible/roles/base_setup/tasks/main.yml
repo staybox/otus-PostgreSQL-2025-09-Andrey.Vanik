@@ -1,0 +1,29 @@
+---
+- name: Set SELinux to permissive (immediate)
+  selinux:
+    policy: targeted
+    state: permissive
+  when: ansible_os_family == "RedHat"
+
+- name: Disable SELinux in config (permanent)
+  lineinfile:
+    path: /etc/selinux/config
+    regexp: '^SELINUX='
+    line: 'SELINUX=disabled'
+  when: ansible_os_family == "RedHat"
+
+- name: Sync /etc/hosts on all 10 nodes
+  lineinfile:
+    path: /etc/hosts
+    line: "{{ hostvars[item].ansible_host }} {{ item }}"
+    state: present
+  loop: "{{ groups['all'] }}"
+
+- name: Sync /etc/hosts on localhost (gui-workstation)
+  become: true
+  delegate_to: localhost
+  lineinfile:
+    path: /etc/hosts
+    line: "{{ hostvars[item].ansible_host }} {{ item }}"
+    state: present
+  loop: "{{ groups['all'] }}"

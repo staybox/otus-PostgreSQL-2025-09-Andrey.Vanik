@@ -1,0 +1,233 @@
+---
+# 1. Подготовка для Prometheus
+- name: Ensure firewalld and python bindings are installed (Monitor node)
+  dnf:
+    name:
+      - firewalld
+      - python3-firewall
+    state: present
+
+- name: Ensure firewalld is started and enabled (Monitor node)
+  systemd:
+    name: firewalld
+    state: started
+    enabled: yes
+
+- name: Create prometheus system group
+  group:
+    name: prometheus
+    system: yes
+    state: present
+
+- name: Create prometheus system user
+  user:
+    name: prometheus
+    group: prometheus
+    system: yes
+    shell: /sbin/nologin
+    create_home: no
+    state: present
+
+- name: Open Firewall for Grafana and Prometheus
+  firewalld:
+    port: "{{ item }}"
+    permanent: yes
+    state: enabled
+    immediate: yes
+  loop:
+    - 3000/tcp  # Grafana
+    - 9090/tcp  # Prometheus
+
+- name: Create prometheus directories
+  file:
+    path: "{{ item }}"
+    state: directory
+    owner: prometheus
+    group: prometheus
+    mode: '0755'
+  loop:
+    - /etc/prometheus
+    - /var/lib/prometheus
+
+# 2. Установка Prometheus (Binary)
+- name: Download and unarchive Prometheus
+  unarchive:
+    src: "https://github.com/prometheus/prometheus/releases/download/v2.45.0/prometheus-2.45.0.linux-amd64.tar.gz"
+    dest: /tmp
+    remote_src: yes
+    creates: /tmp/prometheus-2.45.0.linux-amd64/prometheus
+
+- name: Copy Prometheus binaries to /usr/local/bin
+  copy:
+    src: "/tmp/prometheus-2.45.0.linux-amd64/{{ item }}"
+    dest: "/usr/local/bin/{{ item }}"
+    mode: '0755'
+    owner: prometheus
+    group: prometheus
+    remote_src: yes
+  loop: [prometheus, promtool]
+
+- name: Configure Prometheus (targets)
+  template:
+    src: prometheus.yml.j2
+    dest: /etc/prometheus/prometheus.yml
+    owner: prometheus
+    group: prometheus
+  notify: restart prometheus
+
+- name: Create systemd service for Prometheus
+  copy:
+    dest: /etc/systemd/system/prometheus.service
+    content: |
+      [Unit]
+      Description=Prometheus
+      After=network.target
+
+      [Service]
+      User=prometheus
+      Group=prometheus
+      Type=simple
+      ExecStart=/usr/local/bin/prometheus \
+        --config.file=/etc/prometheus/prometheus.yml \
+        --storage.tsdb.path=/var/lib/prometheus/
+      Restart=always
+
+      [Install]
+      WantedBy=multi-user.target
+
+# 3. Установка Grafana (Локальный RPM без репозиториев)
+- name: Remove broken Grafana repository config (if exists)
+  file:
+    path: /etc/yum.repos.d/grafana.repo
+    state: absent
+
+- name: Download Grafana RPM
+  get_url:
+    url: "https://dl.grafana.com/oss/release/grafana-10.2.3-1.x86_64.rpm"
+    dest: "/tmp/grafana.rpm"
+    timeout: 60
+  tags: grafana
+
+- name: Install Grafana from local RPM
+  dnf:
+    name: "/tmp/grafana.rpm"
+    state: present
+    disable_gpg_check: yes
+    disablerepo: "*"  # Игнорируем внешние репозитории
+    enablerepo: "baseos,appstream"
+  tags: grafana
+
+# 4. Provisioning Grafana (Конфиги до запуска сервиса)
+- name: Create directory for Grafana dashboards
+  file:
+    path: /var/lib/grafana/dashboards
+    state: directory
+    owner: grafana
+    group: grafana
+    mode: '0755'
+
+- name: Create Grafana provisioning directories
+  file:
+    path: "/etc/grafana/provisioning/{{ item }}"
+    state: directory
+    owner: root
+    group: grafana
+    mode: '0755'
+  loop: [dashboards, datasources]
+
+- name: Configure Grafana dashboard provider
+  copy:
+    dest: /etc/grafana/provisioning/dashboards/ansible_dashboards.yaml
+    content: |
+      apiVersion: 1
+      providers:
+        - name: 'Ansible Dashboards'
+          orgId: 1
+          folder: ''
+          type: file
+          options:
+            path: /var/lib/grafana/dashboards
+    owner: root
+    group: grafana
+    mode: '0640'
+  notify: restart grafana
+
+- name: Download Professional PostgreSQL Dashboard JSON
+  get_url:
+    # ID 12485 — золотой стандарт для мониторинга Postgres
+    url: "https://grafana.com/api/dashboards/12485/revisions/1/download"
+    dest: /var/lib/grafana/dashboards/postgresql_exporter.json
+    owner: grafana
+    group: grafana
+    mode: '0644'
+    force: yes
+  tags: update_db_dashboard
+
+- name: Force fixed UID in Dashboard JSON
+  replace:
+    path: /var/lib/grafana/dashboards/postgresql_exporter.json
+    regexp: '\$\{DS_[A-Z0-9-]+\}'
+    replace: 'prometheus_ds'
+  tags: update_db_dashboard
+  notify: restart grafana
+
+- name: Force Data Source name in Dashboard JSON
+  replace:
+    path: /var/lib/grafana/dashboards/postgresql_exporter.json
+    regexp: '"datasource": "\${DS_PROMETHEUS}"'
+    replace: '"datasource": "Prometheus"'
+  notify: restart grafana
+
+- name: Force Global Instance Regex (Correcting operators)
+  replace:
+    path: /var/lib/grafana/dashboards/postgresql_exporter.json
+    # Ищем конструкцию instance=\"$Instance\" или instance=~\"$Instance\"
+    regexp: 'instance\\+"[=~]\\+"((?i)\$instance|\[\[(?i)instance\]\])\\+"'
+    # Заменяем её на правильный оператор регулярки =~ и саму сеть в кавычках
+    replace: 'instance=~\\\"10.10.10..*:9187\\\"'
+  tags: update_db_dashboard
+  notify: restart grafana
+
+#- name: Force Instance Regex in all Queries
+#  replace:
+#    path: /var/lib/grafana/dashboards/postgresql_exporter.json
+    # Мы ищем 'instance', потом слэши и кавычки, потом знак = или =~, 
+    # потом снова слэши-кавычки и любое значение до закрывающей кавычки.
+#    regexp: 'instance\\+"[=~]\\+".+?\\+"'
+#    replace: 'instance\\\"=~\\\"10.10.10..*:9187\\\"'
+#  tags: update_db_dashboard
+
+- name: Fix Instance Variable Query (Dropdown Data)
+  replace:
+    path: /var/lib/grafana/dashboards/postgresql_exporter.json
+    # Ищем query, учитывая, что внутри может быть написано и Instance, и instance
+    regexp: '"query":\s*"label_values\(.*?, (?i)instance\)"'
+    replace: '"query": "label_values(pg_up, instance)"' 
+  tags: update_db_dashboard
+  notify: restart grafana
+
+- name: Configure Grafana datasource (Prometheus)
+  copy:
+    dest: /etc/grafana/provisioning/datasources/prometheus.yaml
+    content: |
+      apiVersion: 1
+      datasources:
+        - name: Prometheus
+          type: prometheus
+          access: proxy
+          url: http://localhost:9090
+          isDefault: true
+          uid: prometheus_ds
+    owner: root
+    group: grafana
+    mode: '0640'
+  notify: restart grafana
+
+# 5. Запуск всех сервисов мониторинга
+- name: Start Monitoring services
+  systemd:
+    name: "{{ item }}"
+    state: started
+    enabled: yes
+    daemon_reload: yes
+  loop: [prometheus, grafana-server]

@@ -1,0 +1,33 @@
+---
+# ЭТАП 0: Базовая подготовка (Hosts, Ключи, SELinux)
+- hosts: all
+  become: true
+  roles:
+    - base_setup
+
+# ЭТАП 1: ETCD Кластер
+- hosts: etcd
+  become: true
+  roles:
+    - etcd_setup
+
+# ЭТАП 2: Postgresql 18 + Patroni
+- hosts: db
+  become: true
+# Можно раскомментировать если нужно настраивать по одному серверу а не три сразу
+# serial: 1
+  roles:
+    - postgres_patroni_setup
+    - postgres_exporter_setup
+
+# ЭТАП 3: HAProxy
+- hosts: haproxy
+  become: true
+  roles:
+    - haproxy_setup
+
+# ЭТАП 4: Мониторинг
+- hosts: monitoring
+  become: true
+  roles:
+    - { role: monitoring_setup, tags: ['monitoring', 'grafana'] }

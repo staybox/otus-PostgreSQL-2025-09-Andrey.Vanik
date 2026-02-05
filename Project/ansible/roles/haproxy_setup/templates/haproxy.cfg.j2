@@ -1,0 +1,46 @@
+global
+    log /dev/log local0
+    maxconn 4000
+    user haproxy
+    group haproxy
+
+defaults
+    log global
+    mode tcp
+    option tcplog
+    option http-keep-alive
+    timeout connect 5s
+    timeout client 30m
+    timeout server 30m
+    timeout check 5s
+
+# Пул для записи (Мастер)
+listen postgres_rw
+    bind *:5432
+    option httpchk
+    http-check send meth GET uri /master ver HTTP/1.1 hdr Host localhost
+    http-check expect status 200
+    default-server inter 3s fall 3 rise 2 on-marked-down shutdown-sessions
+    server pg-node-1 pg-node-1:5432 check port 8008
+    server pg-node-2 pg-node-2:5432 check port 8008
+    server pg-node-3 pg-node-3:5432 check port 8008
+
+# Пул для чтения (Реплики)
+listen postgres_ro
+    bind *:5433
+    balance roundrobin
+    option httpchk
+    http-check send meth GET uri /replica ver HTTP/1.1 hdr Host localhost
+    http-check expect status 200
+    default-server inter 3s fall 3 rise 2
+    server pg-node-1 pg-node-1:5432 check port 8008
+    server pg-node-2 pg-node-2:5432 check port 8008
+    server pg-node-3 pg-node-3:5432 check port 8008
+
+# Веб-интерфейс статистики (NLB стучится сюда)
+listen stats
+    bind *:8080
+    mode http
+    stats enable
+    stats uri /
+    stats refresh 5s

@@ -1,0 +1,121 @@
+---
+- name: Install EPEL repository
+  dnf:
+    name: epel-release
+    state: present
+
+- name: Enable CRB repository (Required for perl-IPC-Run and other devel deps)
+  command: dnf config-manager --set-enabled crb
+  changed_when: false
+
+- name: Install PostgreSQL repository
+  dnf:
+    name: https://download.postgresql.org/pub/repos/yum/reporpms/EL-9-x86_64/pgdg-redhat-repo-latest.noarch.rpm
+    state: present
+    disable_gpg_check: yes
+
+- name: Disable default PostgreSQL module
+  command: dnf -qy module disable postgresql
+  changed_when: false
+  ignore_errors: yes
+
+- name: Install PostgreSQL 18, Development tools and Patroni deps
+  dnf:
+    name:
+      - postgresql18-server
+      - postgresql18-devel
+      - python3-pip
+      - python3-devel
+      - gcc
+      - policycoreutils-python-utils
+      - perl-IPC-Run  # Явно добавим его для надежности
+    state: present
+    enablerepo: "crb,epel" # На всякий случай форсируем поиск в них
+
+- name: Ensure firewalld and python bindings are installed
+  dnf:
+    name:
+      - firewalld
+      - python3-firewall
+    state: present
+
+- name: Ensure firewalld is started and enabled
+  systemd:
+    name: firewalld
+    state: started
+    enabled: yes
+
+- name: Open Firewall for DB and Patroni API
+  firewalld:
+    port: "{{ item }}"
+    permanent: yes
+    state: enabled
+    immediate: yes
+  loop: ['5432/tcp', '8008/tcp']
+
+- name: Install Patroni with Etcd3 support via pip
+  pip:
+    name:
+      - patroni[etcd3]
+      - psycopg2-binary
+    executable: pip3
+
+- name: Create symlinks for PG18 and Patroni
+  file:
+    src: "{{ item.src }}"
+    dest: "{{ item.dest }}"
+    state: link
+    force: yes
+  loop:
+    - { src: '/usr/pgsql-18/bin/psql', dest: '/usr/local/bin/psql' }
+    - { src: '/usr/pgsql-18/bin/pg_ctl', dest: '/usr/local/bin/pg_ctl' }
+    - { src: '/usr/local/bin/patronictl', dest: '/usr/bin/patronictl' }
+
+- name: Configure Patroni from template
+  template:
+    src: patroni.yml.j2
+    dest: /etc/patroni.yml
+    owner: postgres
+    group: postgres
+    mode: '0600'
+  notify: restart patroni
+
+- name: Ensure Patroni service unit exists
+  copy:
+    dest: /etc/systemd/system/patroni.service
+    content: |
+      [Unit]
+      Description=Patroni for PostgreSQL HA
+      After=network-online.target etcd.service
+      Wants=network-online.target
+
+      [Service]
+      Type=simple
+      User=postgres
+      Group=postgres
+      WorkingDirectory=/var/lib/pgsql
+      ExecStart=/usr/local/bin/patroni /etc/patroni.yml
+      # Чтобы systemd не убивал дочерние процессы Postgres слишком быстро
+      KillMode=process
+      TimeoutSec=30
+      # Перезапуск в любом случае
+      Restart=always
+      RestartSec=5s
+
+      [Install]
+      WantedBy=multi-user.target
+
+#- name: Cleanup stale lock files before starting (fix for unix_socket_directories '.')
+#  file:
+#    path: "/var/lib/pgsql/18/data/{{ item }}"
+#    state: absent
+#  loop:
+#    - ".s.PGSQL.5432.lock"
+#    - "postmaster.pid"
+
+- name: Start and enable Patroni
+  systemd:
+    name: patroni
+    state: started
+    enabled: yes
+    daemon_reload: yes

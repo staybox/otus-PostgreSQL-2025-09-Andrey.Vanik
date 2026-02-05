@@ -1,0 +1,75 @@
+scope: diploma-cluster
+namespace: /db/
+name: {{ inventory_hostname }}
+
+restapi:
+  listen: 0.0.0.0:8008
+  connect_address: {{ ansible_host }}:8008
+
+etcd3:
+  hosts:
+    - etcd-1:2379
+    - etcd-2:2379
+    - etcd-3:2379
+
+bootstrap:
+  dcs:
+    ttl: 30
+    loop_wait: 10
+    retry_timeout: 10
+    maximum_lag_on_failover: 1048576
+    # ПАРАМЕТРЫ СИНХРОНИЗАЦИИ (теперь в правильном месте для Patroni)
+    synchronous_mode: true
+    synchronous_node_count: 1
+    postgresql:
+      use_pg_rewind: true
+      use_slots: true
+      parameters:
+        synchronous_commit: "on"
+        wal_level: replica
+        hot_standby: "on"
+        max_wal_senders: 10
+        max_replication_slots: 10
+        wal_log_hints: "on"
+        archive_mode: "on"
+        archive_command: "/bin/true"
+        logging_collector: "on"
+        log_directory: "pg_log"
+        log_filename: "postgresql-%a.log"
+        log_rotation_age: 1440
+
+  initdb:
+  - encoding: UTF8
+
+postgresql:
+  listen: 0.0.0.0:5432
+  connect_address: {{ ansible_host }}:5432
+  data_dir: /var/lib/pgsql/18/data
+  bin_dir: /usr/pgsql-18/bin
+  pgpass: /tmp/pgpass
+  
+  # ПРАВИЛА ДОСТУПА (вне bootstrap, чтобы всегда были в pg_hba.conf)
+  pg_hba:
+    - host all all 0.0.0.0/0 md5
+    - host all all ::1/128 trust
+    - host all all 127.0.0.1/32 trust
+    - host replication replicator 10.10.10.0/24 md5
+    - local all all trust
+    - host replication replicator 127.0.0.1/32 trust
+    - host replication replicator ::1/128 trust
+
+  authentication:
+    replication:
+      username: replicator
+      password: replicatorpass
+    superuser:
+      username: postgres
+      password: adminpass
+  parameters:
+    unix_socket_directories: '.'
+
+tags:
+  nofailover: false
+  noloadbalance: false
+  clonefrom: false
+  nosync: false

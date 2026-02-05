@@ -1,0 +1,32 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # Метрики Patroni (состояние кластера, лидер/реплика)
+  - job_name: 'patroni'
+    static_configs:
+      - targets:
+          - '10.10.10.21:8008'
+          - '10.10.10.22:8008'
+          - '10.10.10.23:8008'
+
+  # Метрики PostgreSQL (требуется postgres_exporter на нодах БД)
+  - job_name: 'postgresql'
+    static_configs:
+      - targets:
+          - '10.10.10.21:9187'
+          - '10.10.10.22:9187'
+          - '10.10.10.23:9187'
+
+  # Метрики Etcd
+  - job_name: 'etcd'
+    static_configs:
+      - targets:
+          - '10.10.10.11:2379'
+          - '10.10.10.12:2379'
+          - '10.10.10.13:2379'
