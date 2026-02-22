@@ -185,7 +185,8 @@ initial connection time = 263.154 ms
 tps = 913.782360 (without initial connection time)
 ```
 
-```WAL и checkpoint после теста```
+```WAL и checkpoint после теста```                        
+
 ![WAL и checkpoint после теста](screens/endLSN.png)
 
 
