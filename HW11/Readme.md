@@ -306,6 +306,8 @@ ORDER BY partition_name;
 (5 rows)
 ```
 
+Выполняем до тестов: ```ANALYZE bookings; ANALYZE bookings_part;```
+
 #### Сравнение производительности (до / после)
 
 ```
@@ -326,229 +328,247 @@ WHERE book_date >= '2025-09-01'
 
 ### Результат
 
+```Обычная таблица```
+
+```
+EEXPLAIN (ANALYZE, BUFFERS)
+SELECT *
+FROM bookings
+WHERE book_date >= '2025-09-10 00:00:00+00'
+  AND book_date <  '2025-09-11 00:00:00+00';
+                                                                        QUERY PLAN
+----------------------------------------------------------------------------------------------------------------------------------------------------------
+ Gather  (cost=1000.00..64421.16 rows=14829 width=21) (actual time=1.334..585.361 rows=15323.00 loops=1)
+   Workers Planned: 2
+   Workers Launched: 2
+   Buffers: shared hit=820 read=30460
+   ->  Parallel Seq Scan on bookings  (cost=0.00..61938.26 rows=6179 width=21) (actual time=1.203..479.637 rows=5107.67 loops=3)
+         Filter: ((book_date >= '2025-09-10 03:00:00+03'::timestamp with time zone) AND (book_date < '2025-09-11 03:00:00+03'::timestamp with time zone))
+         Rows Removed by Filter: 1629972
+         Buffers: shared hit=820 read=30460
+ Planning:
+   Buffers: shared hit=25 read=1
+ Planning Time: 0.515 ms
+ Execution Time: 793.742 ms
+(12 rows)
+
+```
+
+```Секционированная таблица```
+
 ```
 demo=# EXPLAIN (ANALYZE, BUFFERS)
-SELECT count(*)
+SELECT *
+FROM bookings_part
+WHERE book_date >= '2025-09-10 00:00:00+00'
+  AND book_date <  '2025-09-11 00:00:00+00';
+                                                                                        QUERY PLAN
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------
+--------------------------------
+ Index Scan using bookings_part_2025_09_book_date_idx on bookings_part_2025_09 bookings_part  (cost=0.42..1981.98 rows=14553 width=21) (actual time=1.076.
+.124.392 rows=15323.00 loops=1)
+   Index Cond: ((book_date >= '2025-09-10 03:00:00+03'::timestamp with time zone) AND (book_date < '2025-09-11 03:00:00+03'::timestamp with time zone))
+   Index Searches: 1
+   Buffers: shared hit=14538 read=67
+ Planning:
+   Buffers: shared hit=21
+ Planning Time: 0.243 ms
+ Execution Time: 218.961 ms
+(8 rows)
+```
+
+#### Выборка за 1 час
+
+```Обычная таблица```
+
+```
+demo=# EXPLAIN (ANALYZE, BUFFERS)
+SELECT *
 FROM bookings
-WHERE book_date >= '2025-09-01'
-  AND book_date <  '2025-10-01';
+WHERE book_date >= '2025-09-10 10:00:00+00'
+  AND book_date <  '2025-09-10 11:00:00+00';
+                                                                        QUERY PLAN
+----------------------------------------------------------------------------------------------------------------------------------------------------------
+ Gather  (cost=1000.00..63000.06 rows=618 width=21) (actual time=7.549..475.337 rows=664.00 loops=1)
+   Workers Planned: 2
+   Workers Launched: 2
+   Buffers: shared hit=1102 read=30178
+   ->  Parallel Seq Scan on bookings  (cost=0.00..61938.26 rows=258 width=21) (actual time=307.859..454.125 rows=221.33 loops=3)
+         Filter: ((book_date >= '2025-09-10 13:00:00+03'::timestamp with time zone) AND (book_date < '2025-09-10 14:00:00+03'::timestamp with time zone))
+         Rows Removed by Filter: 1634858
+         Buffers: shared hit=1102 read=30178
+ Planning Time: 0.126 ms
+ Execution Time: 482.328 ms
+(10 rows)
+```
+
+```Секционированная таблица```
+
+```
+demo=# EXPLAIN (ANALYZE, BUFFERS)
+SELECT *
+FROM bookings_part
+WHERE book_date >= '2025-09-10 10:00:00+00'
+  AND book_date <  '2025-09-10 11:00:00+00';
+                                                                                    QUERY PLAN
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------
+-------------------------
+ Index Scan using bookings_part_2025_09_book_date_idx on bookings_part_2025_09 bookings_part  (cost=0.42..313.54 rows=644 width=21) (actual time=0.034..3.
+610 rows=664.00 loops=1)
+   Index Cond: ((book_date >= '2025-09-10 13:00:00+03'::timestamp with time zone) AND (book_date < '2025-09-10 14:00:00+03'::timestamp with time zone))
+   Index Searches: 1
+   Buffers: shared hit=626
+ Planning Time: 0.199 ms
+ Execution Time: 6.778 ms
+(6 rows)
+```
+
+#### ORDER BY book_date LIMIT
+
+```Обычная таблица```
+
+```
+demo=# EXPLAIN (ANALYZE, BUFFERS)
+SELECT book_ref, book_date, total_amount
+FROM bookings
+WHERE book_date >= '2025-09-10 00:00:00+00'
+  AND book_date <  '2025-09-11 00:00:00+00'
+ORDER BY book_date
+LIMIT 100;
                                                                               QUERY PLAN
 
 ----------------------------------------------------------------------------------------------------------------------------------------------------------
 ------------
- Finalize Aggregate  (cost=63404.20..63404.21 rows=1 width=8) (actual time=5471.644..5475.140 rows=1.00 loops=1)
-   Buffers: shared read=31280
-   ->  Gather  (cost=63403.98..63404.19 rows=2 width=8) (actual time=5468.097..5474.579 rows=3.00 loops=1)
+ Limit  (cost=63327.35..63338.99 rows=100 width=21) (actual time=695.073..698.248 rows=100.00 loops=1)
+   Buffers: shared hit=1460 read=29896
+   ->  Gather Merge  (cost=63327.35..65054.43 rows=14829 width=21) (actual time=695.062..696.394 rows=100.00 loops=1)
          Workers Planned: 2
          Workers Launched: 2
-         Buffers: shared read=31280
-         ->  Partial Aggregate  (cost=62403.98..62403.99 rows=1 width=8) (actual time=5458.515..5458.542 rows=1.00 loops=3)
-               Buffers: shared read=31280
-               ->  Parallel Seq Scan on bookings  (cost=0.00..61937.74 rows=186498 width=0) (actual time=0.617..3060.053 rows=148773.00 loops=3)
-                     Filter: ((book_date >= '2025-09-01 00:00:00+03'::timestamp with time zone) AND (book_date < '2025-10-01 00:00:00+03'::timestamp with
+         Buffers: shared hit=1460 read=29896
+         ->  Sort  (cost=62327.32..62342.77 rows=6179 width=21) (actual time=681.431..682.122 rows=93.67 loops=3)
+               Sort Key: book_date
+               Sort Method: top-N heapsort  Memory: 35kB
+               Buffers: shared hit=1460 read=29896
+               Worker 0:  Sort Method: top-N heapsort  Memory: 32kB
+               Worker 1:  Sort Method: top-N heapsort  Memory: 32kB
+               ->  Parallel Seq Scan on bookings  (cost=0.00..61938.26 rows=6179 width=21) (actual time=1.745..589.175 rows=5107.67 loops=3)
+                     Filter: ((book_date >= '2025-09-10 03:00:00+03'::timestamp with time zone) AND (book_date < '2025-09-11 03:00:00+03'::timestamp with
 time zone))
-                     Rows Removed by Filter: 1486306
-                     Buffers: shared read=31280
+                     Rows Removed by Filter: 1629972
+                     Buffers: shared hit=1384 read=29896
+ Planning Time: 0.175 ms
+ Execution Time: 698.847 ms
+(18 rows)
+```
+
+```Секционированная таблица```
+
+```
+demo=# EXPLAIN (ANALYZE, BUFFERS)
+SELECT book_ref, book_date, total_amount
+FROM bookings_part
+WHERE book_date >= '2025-09-10 00:00:00+00'
+  AND book_date <  '2025-09-11 00:00:00+00'
+ORDER BY book_date
+LIMIT 100;
+                                                                                         QUERY PLAN
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------
+----------------------------------
+ Limit  (cost=0.42..14.04 rows=100 width=21) (actual time=0.050..1.679 rows=100.00 loops=1)
+   Buffers: shared hit=96
+   ->  Index Scan using bookings_part_2025_09_book_date_idx on bookings_part_2025_09 bookings_part  (cost=0.42..1981.98 rows=14553 width=21) (actual time=
+0.040..0.642 rows=100.00 loops=1)
+         Index Cond: ((book_date >= '2025-09-10 03:00:00+03'::timestamp with time zone) AND (book_date < '2025-09-11 03:00:00+03'::timestamp with time zon
+e))
+         Index Searches: 1
+         Buffers: shared hit=96
+ Planning Time: 0.197 ms
+ Execution Time: 2.182 ms
+(8 rows)
+```
+
+#### Точечный диапазон + агрегат
+
+```Обычная таблица```
+
+```
+demo=# EXPLAIN (ANALYZE, BUFFERS)
+SELECT sum(total_amount), avg(total_amount), count(*)
+FROM bookings
+WHERE book_date >= '2025-09-10 00:00:00+00'
+  AND book_date <  '2025-09-11 00:00:00+00';
+                                                                              QUERY PLAN
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------
+------------
+ Finalize Aggregate  (cost=62969.38..62969.39 rows=1 width=72) (actual time=456.850..456.957 rows=1.00 loops=1)
+   Buffers: shared hit=1666 read=29614
+   ->  Gather  (cost=62969.15..62969.36 rows=2 width=72) (actual time=453.336..456.885 rows=3.00 loops=1)
+         Workers Planned: 2
+         Workers Launched: 2
+         Buffers: shared hit=1666 read=29614
+         ->  Partial Aggregate  (cost=61969.15..61969.16 rows=1 width=72) (actual time=443.511..443.532 rows=1.00 loops=3)
+               Buffers: shared hit=1666 read=29614
+               ->  Parallel Seq Scan on bookings  (cost=0.00..61938.26 rows=6179 width=6) (actual time=1.257..361.977 rows=5107.67 loops=3)
+                     Filter: ((book_date >= '2025-09-10 03:00:00+03'::timestamp with time zone) AND (book_date < '2025-09-11 03:00:00+03'::timestamp with
+time zone))
+                     Rows Removed by Filter: 1629972
+                     Buffers: shared hit=1666 read=29614
  Planning:
-   Buffers: shared hit=8
- Planning Time: 0.281 ms
- Execution Time: 5475.247 ms
+   Buffers: shared hit=3
+ Planning Time: 0.129 ms
+ Execution Time: 457.026 ms
 (16 rows)
 ```
 
+```Секционированная таблица```
+
 ```
 demo=# EXPLAIN (ANALYZE, BUFFERS)
-SELECT count(*)
+SELECT sum(total_amount), avg(total_amount), count(*)
 FROM bookings_part
-WHERE book_date >= '2025-09-01'
-  AND book_date <  '2025-10-01';
-                                                                                                     QUERY PLAN
+WHERE book_date >= '2025-09-10 00:00:00+00'
+  AND book_date <  '2025-09-11 00:00:00+00';
+                                                                                          QUERY PLAN
 
 ----------------------------------------------------------------------------------------------------------------------------------------------------------
-----------------------------------------------------------
- Finalize Aggregate  (cost=9206.52..9206.53 rows=1 width=8) (actual time=9419.299..9420.782 rows=1.00 loops=1)
-   Buffers: shared hit=2778 read=80
-   ->  Gather  (cost=9206.31..9206.52 rows=2 width=8) (actual time=9419.242..9420.734 rows=3.00 loops=1)
-         Workers Planned: 2
-         Workers Launched: 2
-         Buffers: shared hit=2778 read=80
-         ->  Partial Aggregate  (cost=8206.31..8206.32 rows=1 width=8) (actual time=9402.888..9402.920 rows=1.00 loops=3)
-               Buffers: shared hit=2778 read=80
-               ->  Parallel Append  (cost=0.00..7741.52 rows=185914 width=0) (actual time=0.113..7081.458 rows=148773.00 loops=3)
-                     Buffers: shared hit=2778 read=80
-                     ->  Parallel Index Only Scan using bookings_part_default_book_date_idx on bookings_part_default bookings_part_2  (cost=0.43..4.45 row
-s=1 width=0) (actual time=0.046..0.051 rows=0.00 loops=1)
-                           Index Cond: ((book_date >= '2025-09-01 00:00:00+03'::timestamp with time zone) AND (book_date < '2025-10-01 00:00:00+03'::times
-tamp with time zone))
-                           Heap Fetches: 0
-                           Index Searches: 1
-                           Buffers: shared hit=4
-                     ->  Parallel Seq Scan on bookings_part_2025_09 bookings_part_1  (cost=0.00..6807.51 rows=262466 width=0) (actual time=0.032..2458.146
- rows=148773.00 loops=3)
-                           Filter: ((book_date >= '2025-09-01 00:00:00+03'::timestamp with time zone) AND (book_date < '2025-10-01 00:00:00+03'::timestamp
- with time zone))
-                           Rows Removed by Filter: 582
-                           Buffers: shared hit=2774 read=80
- Planning:
-   Buffers: shared hit=20 read=10
- Planning Time: 3.570 ms
- Execution Time: 9420.954 ms
-(23 rows)
-```
-
-#### Агрегация по месяцу
-
-```
-demo=# EXPLAIN (ANALYZE, BUFFERS)
-SELECT date_trunc('month', book_date) AS mon,
-       count(*)                       AS cnt,
-       sum(total_amount)              AS total_sum
-FROM bookings
-WHERE book_date >= '2025-09-01'
-  AND book_date <  '2025-10-01'
-GROUP BY 1
-ORDER BY 1;
-                                                                              QUERY PLAN
-
-----------------------------------------------------------------------------------------------------------------------------------------------------------
-------------
- GroupAggregate  (cost=82919.29..145119.99 rows=447595 width=48) (actual time=14806.792..14806.981 rows=1.00 loops=1)
-   Group Key: (date_trunc('month'::text, book_date))
-   Buffers: shared hit=358 read=30998, temp read=1323 written=1329
-   ->  Gather Merge  (cost=82919.29..135049.10 rows=447595 width=14) (actual time=5482.380..11947.669 rows=446319.00 loops=1)
-         Workers Planned: 2
-         Workers Launched: 2
-         Buffers: shared hit=358 read=30998, temp read=1323 written=1329
-         ->  Sort  (cost=81919.26..82385.51 rows=186498 width=14) (actual time=5464.985..6500.986 rows=148773.00 loops=3)
-               Sort Key: (date_trunc('month'::text, book_date))
-               Sort Method: external merge  Disk: 3552kB
-               Buffers: shared hit=358 read=30998, temp read=1323 written=1329
-               Worker 0:  Sort Method: external merge  Disk: 3528kB
-               Worker 1:  Sort Method: external merge  Disk: 3504kB
-               ->  Parallel Seq Scan on bookings  (cost=0.00..62403.98 rows=186498 width=14) (actual time=0.954..3136.349 rows=148773.00 loops=3)
-                     Filter: ((book_date >= '2025-09-01 00:00:00+03'::timestamp with time zone) AND (book_date < '2025-10-01 00:00:00+03'::timestamp with
-time zone))
-                     Rows Removed by Filter: 1486306
-                     Buffers: shared hit=282 read=30998
- Planning:
-   Buffers: shared hit=11 read=4
- Planning Time: 1.754 ms
- Execution Time: 14808.198 ms
-(21 rows)
-```
-
-```
-demo=# EXPLAIN (ANALYZE, BUFFERS)
-SELECT date_trunc('month', book_date) AS mon,
-       count(*)                       AS cnt,
-       sum(total_amount)              AS total_sum
-FROM bookings_part
-WHERE book_date >= '2025-09-01'
-  AND book_date <  '2025-10-01'
-GROUP BY 1
-ORDER BY 1;
-                                                                                                      QUERY PLAN
-
-----------------------------------------------------------------------------------------------------------------------------------------------------------
-------------------------------------------------------------
- Finalize GroupAggregate  (cost=10806.71..10870.42 rows=200 width=48) (actual time=9792.678..9795.734 rows=1.00 loops=1)
-   Group Key: (date_trunc('month'::text, bookings_part.book_date))
-   Buffers: shared hit=2874
-   ->  Gather Merge  (cost=10806.71..10862.62 rows=480 width=48) (actual time=9792.608..9795.672 rows=3.00 loops=1)
-         Workers Planned: 2
-         Workers Launched: 2
-         Buffers: shared hit=2874
-         ->  Sort  (cost=9806.69..9807.19 rows=200 width=48) (actual time=9776.291..9776.337 rows=1.00 loops=3)
-               Sort Key: (date_trunc('month'::text, bookings_part.book_date))
-               Sort Method: quicksort  Memory: 25kB
-               Buffers: shared hit=2874
-               Worker 0:  Sort Method: quicksort  Memory: 25kB
-               Worker 1:  Sort Method: quicksort  Memory: 25kB
-               ->  Partial HashAggregate  (cost=9796.04..9799.04 rows=200 width=48) (actual time=9776.224..9776.259 rows=1.00 loops=3)
-                     Group Key: (date_trunc('month'::text, bookings_part.book_date))
-                     Batches: 1  Memory Usage: 32kB
-                     Buffers: shared hit=2858
-                     Worker 0:  Batches: 1  Memory Usage: 32kB
-                     Worker 1:  Batches: 1  Memory Usage: 32kB
-                     ->  Parallel Append  (cost=0.00..8401.69 rows=185914 width=14) (actual time=0.050..7168.406 rows=148773.00 loops=3)
-                           Buffers: shared hit=2858
-                           ->  Parallel Index Scan using bookings_part_default_book_date_idx on bookings_part_default bookings_part_2  (cost=0.43..8.45 ro
-ws=1 width=14) (actual time=0.032..0.039 rows=0.00 loops=1)
-                                 Index Cond: ((book_date >= '2025-09-01 00:00:00+03'::timestamp with time zone) AND (book_date < '2025-10-01 00:00:00+03':
-:timestamp with time zone))
-                                 Index Searches: 1
-                                 Buffers: shared hit=4
-                           ->  Parallel Seq Scan on bookings_part_2025_09 bookings_part_1  (cost=0.00..7463.67 rows=262466 width=14) (actual time=0.026..2
-511.864 rows=148773.00 loops=3)
-                                 Filter: ((book_date >= '2025-09-01 00:00:00+03'::timestamp with time zone) AND (book_date < '2025-10-01 00:00:00+03'::tim
-estamp with time zone))
-                                 Rows Removed by Filter: 582
-                                 Buffers: shared hit=2854
- Planning:
-   Buffers: shared hit=24
- Planning Time: 0.493 ms
- Execution Time: 9795.876 ms
-(33 rows)
+-------------------------------------
+ Aggregate  (cost=2054.75..2054.76 rows=1 width=72) (actual time=218.878..218.903 rows=1.00 loops=1)
+   Buffers: shared hit=14605
+   ->  Index Scan using bookings_part_2025_09_book_date_idx on bookings_part_2025_09 bookings_part  (cost=0.42..1981.98 rows=14553 width=6) (actual time=0
+.043..116.255 rows=15323.00 loops=1)
+         Index Cond: ((book_date >= '2025-09-10 03:00:00+03'::timestamp with time zone) AND (book_date < '2025-09-11 03:00:00+03'::timestamp with time zon
+e))
+         Index Searches: 1
+         Buffers: shared hit=14605
+ Planning Time: 0.181 ms
+ Execution Time: 218.966 ms
+(8 rows)
 ```
 
 ### Краткий отчет по ДЗ
-#### Цель
 
-- Освоить секционирование таблиц в PostgreSQL для повышения производительности запросов и упрощения управления данными.
+В ходе работы была создана секционированная таблица bookings_part (секционирование по диапазону book_date) и выполнено сравнение запросов с исходной таблицей bookings с помощью EXPLAIN (ANALYZE, BUFFERS). После обновления статистики (ANALYZE) для тестовых запросов по узким диапазонам времени (1 день и 1 час) секционированная таблица показала заметное ускорение. На исходной таблице PostgreSQL использовал Parallel Seq Scan, просматривая практически всю таблицу и отбрасывая миллионы строк по фильтру, тогда как на секционированной таблице был использован Index Scan по индексу book_date только на нужной секции (bookings_part_2025_09). 
 
-#### Выбранная таблица
+#### Наиболее заметный эффект получен для селективных запросов:
 
-- Для секционирования выбрана таблица bookings, так как она содержит поле book_date, по которому данные имеют естественную временную структуру. Это позволяет использовать диапазонное секционирование.
+- выборка за 1 час: время выполнения уменьшилось примерно с 482 ms до 6.8 ms (ускорение примерно в 70 раз);
 
-#### Выбранный тип секционирования
+- выборка за 1 день: с 794 ms до 219 ms (примерно в 3.6 раза);
 
-- Использовано секционирование по диапазону (RANGE) по полю book_date с разбиением по месяцам.
+- запрос ORDER BY book_date LIMIT 100 за 1 день: с 699 ms до 2.2 ms (ускорение более чем в 300 раз), так как секционированная таблица смогла сразу читать данные в нужном порядке через индекс;
 
-#### Обоснование выбора
+- агрегатный запрос (sum/avg/count) за 1 день: с 457 ms до 219 ms (примерно в 2 раза). 
 
-- типичные запросы к бронированиям часто ограничиваются периодом;
+Таким образом, секционирование в PostgreSQL не гарантирует ускорение всех запросов, но даёт существенный выигрыш в сочетании с индексом, когда запросы:
 
-- диапазонное секционирование позволяет PostgreSQL выполнять partition pruning и читать только нужные секции;
+- фильтруют данные по ключу секционирования (book_date),
 
-- упрощается сопровождение исторических данных (архивирование/удаление секций).
+- работают с относительно узким диапазоном данных,
 
-#### Особенности реализации
+- используют сортировку/LIMIT или выборку небольшой части строк.
 
-- В учебном варианте создана новая таблица bookings_part, секционированная по book_date.
-Исходная таблица bookings сохранена без изменений.
-
-**Причина:** при секционировании bookings по book_date невозможно сохранить PRIMARY KEY (book_ref) на родительской таблице без включения ключа секционирования в уникальный ключ (ограничение PostgreSQL для partitioned tables). Для полной миграции продакшн-схемы потребовалась бы переработка PK/FK.
-
-#### Выполненные шаги
-
-- Проанализирована структура таблиц demoDB.
-
-- Выбран ключ секционирования book_date.
-
-- Создана таблица bookings_part, секционированная по RANGE.
-
-- Созданы секции по месяцам + DEFAULT секция.
-
-- Добавлены индексы.
-
-- Выполнена миграция данных из bookings.
-
-- Проверено распределение строк по секциям.
-
-- Выполнено сравнение запросов до/после секционирования (EXPLAIN ANALYZE).
-
-- Протестированы операции INSERT/UPDATE/DELETE.
-
-#### Результат
-
-- Секционирование не всегда ускоряет всё подряд.
-
-- Основной эффект — при фильтрации по ключу секционирования.
-
-- По результатам тестирования секционированной таблицы bookings_part подтверждено корректное распределение данных по секциям и работа механизма partition pruning (в плане выполнения используются отдельные секции, а не вся таблица целиком).
-Однако в проведённых тестах ускорения не получено: запросы к секционированной таблице выполнялись медленнее исходной таблицы. Это связано с тем, что выборка за месяц всё равно приводит к последовательному чтению крупной секции, а также с накладными расходами на Parallel Append и наличием большой DEFAULT секции.
-Таким образом, секционирование само по себе не гарантирует ускорение; эффект зависит от структуры секций, распределения данных, индексов и характера запросов.
-
-#### Практическая польза
-
-- Подход полезен для систем с большими объемами данных, где запросы и обслуживание данных выполняются по временным периодам (месяц, квартал, год).
+- Это подтверждает, что секционирование особенно полезно для таблиц с временными данными и типовых запросов по периодам.
