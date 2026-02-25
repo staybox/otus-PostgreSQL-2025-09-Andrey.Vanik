@@ -199,7 +199,7 @@ CREATE TABLE bookings_part
 PARTITION BY RANGE (book_date);
 
 -- 3. Создаем секции (пример: по месяцам)
--- !!! Подстрой диапазоны под фактические данные в вашей demoDB.
+-- !!! Зададим диапазоны под фактические данные в БД demo.
 CREATE TABLE bookings_part_2025_09 PARTITION OF bookings_part
 FOR VALUES FROM ('2025-09-01 00:00:00+00') TO ('2025-10-01 00:00:00+00');
 
